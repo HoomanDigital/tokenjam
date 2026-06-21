@@ -331,7 +331,10 @@ def iter_claude_code_sessions(
         yield parsed
 
 
-def session_record_from_parsed(parsed: ParsedSession) -> SessionRecord:
+def session_record_from_parsed(
+    parsed: ParsedSession,
+    plan_tier: str | None = None,
+) -> SessionRecord:
     return SessionRecord(
         session_id=parsed.session_id,
         agent_id=parsed.agent_id,
@@ -345,6 +348,7 @@ def session_record_from_parsed(parsed: ParsedSession) -> SessionRecord:
         cache_tokens=parsed.total_cache_tokens,
         tool_call_count=parsed.tool_call_count,
         error_count=0,
+        plan_tier=plan_tier or "unknown",
     )
 
 
@@ -355,6 +359,7 @@ def ingest_claude_code(
     root: Path | None = None,
     since: datetime | None = None,
     progress=None,
+    plan_tier: str | None = None,
 ) -> BackfillResult:
     """
     Ingest Claude Code sessions into the storage backend.
@@ -371,7 +376,7 @@ def ingest_claude_code(
         if parsed.cwd:
             projects_seen.add(parsed.cwd)
         try:
-            inserted = _insert_session_idempotent(db, parsed)
+            inserted = _insert_session_idempotent(db, parsed, plan_tier=plan_tier)
         except Exception as exc:
             result.files_failed += 1
             if len(result.sample_errors) < 5:
@@ -399,7 +404,11 @@ def ingest_claude_code(
     return result
 
 
-def _insert_session_idempotent(db, parsed: ParsedSession) -> int:
+def _insert_session_idempotent(
+    db,
+    parsed: ParsedSession,
+    plan_tier: str | None = None,
+) -> int:
     """
     Insert spans + session record; skip spans already present.
     Returns the number of newly-inserted spans.
@@ -414,7 +423,7 @@ def _insert_session_idempotent(db, parsed: ParsedSession) -> int:
                 inserted += 1
             except Exception:
                 continue
-        db.upsert_session(session_record_from_parsed(parsed))
+        db.upsert_session(session_record_from_parsed(parsed, plan_tier=plan_tier))
         return inserted
 
     for span in parsed.spans:
@@ -447,7 +456,7 @@ def _insert_session_idempotent(db, parsed: ParsedSession) -> int:
         )
         inserted += 1
 
-    db.upsert_session(session_record_from_parsed(parsed))
+    db.upsert_session(session_record_from_parsed(parsed, plan_tier=plan_tier))
     return inserted
 
 
